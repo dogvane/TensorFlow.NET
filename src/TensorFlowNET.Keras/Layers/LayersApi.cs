@@ -1,4 +1,5 @@
 ﻿using NumSharp;
+using System.Collections.Generic;
 using Tensorflow.Keras.ArgsDefinition;
 using Tensorflow.Keras.Engine;
 using static Tensorflow.Binding;
@@ -139,9 +140,55 @@ namespace Tensorflow.Keras.Layers
                     Activation = GetActivationByName(activation)
                 });
 
+        /// <summary>
+        /// Transposed convolution layer (sometimes called Deconvolution).
+        /// </summary>
+        /// <param name="filters"></param>
+        /// <param name="kernel_size"></param>
+        /// <param name="strides"></param>
+        /// <param name="padding"></param>
+        /// <param name="data_format"></param>
+        /// <param name="dilation_rate"></param>
+        /// <param name="activation"></param>
+        /// <param name="use_bias"></param>
+        /// <param name="kernel_initializer"></param>
+        /// <param name="bias_initializer"></param>
+        /// <param name="kernel_regularizer"></param>
+        /// <param name="bias_regularizer"></param>
+        /// <param name="activity_regularizer"></param>
+        /// <returns></returns>
+        public Conv2DTranspose Conv2DTranspose(int filters,
+            TensorShape kernel_size = null,
+            TensorShape strides = null,
+            string padding = "valid",
+            string data_format = null,
+            TensorShape dilation_rate = null,
+            string activation = null,
+            bool use_bias = true,
+            string kernel_initializer = null,
+            string bias_initializer = null,
+            string kernel_regularizer = null,
+            string bias_regularizer = null,
+            string activity_regularizer = null)
+                => new Conv2DTranspose(new Conv2DArgs
+                {
+                    Rank = 2,
+                    Filters = filters,
+                    KernelSize = kernel_size,
+                    Strides = strides == null ? (1, 1) : strides,
+                    Padding = padding,
+                    DataFormat = data_format,
+                    DilationRate = dilation_rate == null ? (1, 1) : dilation_rate,
+                    UseBias = use_bias,
+                    KernelInitializer = GetInitializerByName(kernel_initializer),
+                    BiasInitializer = GetInitializerByName(bias_initializer),
+                    Activation = GetActivationByName(activation)
+                });
+
         public Dense Dense(int units,
             Activation activation = null,
             IInitializer kernel_initializer = null,
+            bool use_bias = true,
             IInitializer bias_initializer = null,
             TensorShape input_shape = null)
             => new Dense(new DenseArgs
@@ -149,7 +196,7 @@ namespace Tensorflow.Keras.Layers
                 Units = units,
                 Activation = activation ?? keras.activations.Linear,
                 KernelInitializer = kernel_initializer ?? tf.glorot_uniform_initializer,
-                BiasInitializer = bias_initializer ?? tf.zeros_initializer,
+                BiasInitializer = bias_initializer ?? (use_bias ? tf.zeros_initializer : null),
                 InputShape = input_shape
             });
 
@@ -326,6 +373,24 @@ namespace Tensorflow.Keras.Layers
                 Alpha = alpha
             });
 
+        public Layer SimpleRNN(int units) => SimpleRNN(units, "tanh");
+
+        public Layer SimpleRNN(int units,
+            Activation activation = null)
+                => new SimpleRNN(new SimpleRNNArgs
+                {
+                    Units = units,
+                    Activation = activation
+                });
+
+        public Layer SimpleRNN(int units,
+            string activation = "tanh")
+                => new SimpleRNN(new SimpleRNNArgs
+                {
+                    Units = units,
+                    Activation = GetActivationByName(activation)
+                });
+
         public Layer LSTM(int units,
             Activation activation = null,
             Activation recurrent_activation = null,
@@ -374,6 +439,9 @@ namespace Tensorflow.Keras.Layers
 
         public Add Add()
             => new Add(new MergeArgs { });
+
+        public Subtract Subtract()
+            => new Subtract(new MergeArgs { });
 
         public GlobalAveragePooling2D GlobalAveragePooling2D()
             => new GlobalAveragePooling2D(new Pooling2DArgs { });

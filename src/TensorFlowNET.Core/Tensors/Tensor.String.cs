@@ -8,7 +8,29 @@ namespace Tensorflow
 {
     public partial class Tensor
     {
-        public unsafe IntPtr StringTensor(string[] strings, TensorShape shape)
+        const ulong TF_TSRING_SIZE = 24;
+
+        public IntPtr StringTensor25(string[] strings, TensorShape shape)
+        {
+            var handle = c_api.TF_AllocateTensor(TF_DataType.TF_STRING,
+                shape.dims.Select(x => (long)x).ToArray(),
+                shape.ndim,
+                (ulong)shape.size * TF_TSRING_SIZE);
+
+            var data = c_api.TF_TensorData(handle);
+            var tstr = c_api.TF_StringInit(handle);
+            // AllocationHandle = tstr;
+            // AllocationType = AllocationType.Tensorflow;
+            for (int i = 0; i< strings.Length; i++)
+            {
+                c_api.TF_StringCopy(tstr, strings[i], strings[i].Length);
+                tstr += (int)TF_TSRING_SIZE;
+            }
+            // c_api.TF_StringDealloc(tstr);
+            return handle;
+        }
+
+        public IntPtr StringTensor(string[] strings, TensorShape shape)
         {
             // convert string array to byte[][]
             var buffer = new byte[strings.Length][];
@@ -61,11 +83,27 @@ namespace Tensorflow
             return handle;
         }
 
+        public string[] StringData25()
+        {
+            string[] strings = new string[c_api.TF_Dim(_handle, 0)];
+            var tstrings = TensorDataPointer; 
+            for (int i = 0; i< strings.Length; i++)
+            {
+                var tstringData = c_api.TF_StringGetDataPointer(tstrings);
+                /*var size = c_api.TF_StringGetSize(tstrings);
+                var capacity = c_api.TF_StringGetCapacity(tstrings);
+                var type = c_api.TF_StringGetType(tstrings);*/
+                strings[i] = c_api.StringPiece(tstringData);
+                tstrings += (int)TF_TSRING_SIZE;
+            }
+            return strings;
+        }
+
         /// <summary>
         ///     Extracts string array from current Tensor.
         /// </summary>
         /// <exception cref="InvalidOperationException">When <see cref="dtype"/> != TF_DataType.TF_STRING</exception>
-        public unsafe string[] StringData()
+        public string[] StringData()
         {
             var buffer = StringBytes();
 
@@ -91,14 +129,16 @@ namespace Tensorflow
 
             var buffer = new byte[size][];
             var data_start = c_api.TF_TensorData(_handle);
-            var string_start = data_start + (int)(size * sizeof(ulong));
+            data_start += (int)(size * sizeof(ulong));
             for (int i = 0; i < buffer.Length; i++)
             {
-                var len = *(byte*)string_start;
-                buffer[i] = new byte[len];
-                string_start += 1;
-                Marshal.Copy(string_start, buffer[i], 0, len);
-                string_start += len;
+                IntPtr dst = IntPtr.Zero;
+                ulong dstLen = 0;
+                var read = c_api.TF_StringDecode((byte*)data_start, bytesize, (byte**)&dst, ref dstLen, tf.Status.Handle);
+                tf.Status.Check(true);
+                buffer[i] = new byte[(int)dstLen];
+                Marshal.Copy(dst, buffer[i], 0, buffer[i].Length);
+                data_start += (int)read;
             }
 
             return buffer;
