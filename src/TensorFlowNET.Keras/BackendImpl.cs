@@ -16,8 +16,12 @@
 
 using NumSharp;
 using System;
+using System.Linq;
 using System.Collections.Generic;
+using Tensorflow.Functions;
+using Tensorflow.Graphs;
 using static Tensorflow.Binding;
+using static Tensorflow.Graphs.SubGraphUtility;
 
 namespace Tensorflow.Keras
 {
@@ -32,6 +36,7 @@ namespace Tensorflow.Keras
         public Session _SESSION => ops.get_default_session();
 
         public Graph _GRAPH;
+        FuncGraph _CURRENT_SCRATCH_GRAPH;
         public Dictionary<Graph, GraphLearningPhase> _GRAPH_LEARNING_PHASES;
         //Dictionary<Graph, Dictionary<string, int>> PER_GRAPH_LAYER_NAME_UIDS;
         public bool _MANUAL_VAR_INIT = false;
@@ -78,7 +83,22 @@ namespace Tensorflow.Keras
 
         public Graph get_graph()
         {
+            if (tf.Context.executing_eagerly())
+            {
+                if (_GRAPH == null)
+                    _GRAPH = new FuncGraph("keras_graph");
+                
+                return _GRAPH;
+            }
             return ops.get_default_graph();
+        }
+
+        FuncGraph _scratch_graph()
+        {
+            if (_CURRENT_SCRATCH_GRAPH == null)
+                _CURRENT_SCRATCH_GRAPH = new FuncGraph("keras_scratch_graph");
+            
+            return _CURRENT_SCRATCH_GRAPH;
         }
 
         public int get_uid(string prefix)
@@ -96,12 +116,22 @@ namespace Tensorflow.Keras
         public void reset_uids() => PER_GRAPH_LAYER_NAME_UIDS = new Dictionary<Graph, Dictionary<string, int>>();
         public void clear_session()
         {
-            ops.reset_default_graph();
+            tf.Context.reset_context();
             reset_uids();
+            // var phase = tf.placeholder_with_default(false, new int[] { }, name: "keras_learning_phase");
+            if (_GRAPH_LEARNING_PHASES != null)
+                _GRAPH_LEARNING_PHASES.Clear();
+            if (_GRAPH_LEARNING_PHASES != null)
+                _GRAPH_LEARNING_PHASES.Clear();
+            PER_GRAPH_LAYER_NAME_UIDS.Clear();
+            _CURRENT_SCRATCH_GRAPH = null;
+            _GRAPH = null;
+            
             ops.set_default_session(tf.Session(ops.get_default_graph()));
-            var phase = tf.placeholder_with_default(false, new int[] { }, name: "keras_learning_phase");
-            _GRAPH_LEARNING_PHASES = new Dictionary<Graph, GraphLearningPhase>();
-            _GRAPH_LEARNING_PHASES[tf.get_default_graph()] = 0;
+            tf.enable_eager_execution();
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
         }
         public void manual_variable_initialization(bool value)
         {
@@ -120,6 +150,19 @@ namespace Tensorflow.Keras
         public void set_learning_phase(bool value)
         {
             _GRAPH_LEARNING_PHASES[tf.get_default_graph()] = (GraphLearningPhase)((value) ? 1 : 0);
+        }
+
+        public void batch_set_value(List<(IVariableV1, NDArray)> tuples)
+        {
+            if (ops.executing_eagerly_outside_functions())
+            {
+                foreach (var (x, value) in tuples)
+                    x.assign(value, read_value: false);
+            }
+            else
+            {
+                throw new NotImplementedException("");
+            }
         }
 
         /// <summary>
@@ -160,9 +203,37 @@ namespace Tensorflow.Keras
         /// </summary>
         /// <param name="outputs"></param>
         /// <returns></returns>
-        public NDArray eval_in_eager_or_function(Tensor outputs)
+        public NDArray eval_in_eager_or_function(Tensors outputs)
         {
-            return outputs.eval();
+            if (outputs[0].op.type == "Const")
+                return tensor_util.constant_value(outputs);
+                
+            var source_graph = outputs.graph;
+            var exec_graph = _scratch_graph();
+            var global_graph = get_graph();
+            if (source_graph == global_graph && exec_graph != global_graph)
+            {
+                var lifted_map = lift_to_graph(outputs, exec_graph, 
+                    new List<Tensor>(), 
+                    add_sources: true, 
+                    handle_captures: true, 
+                    base_graph: source_graph);
+            }
+            if (outputs[0].op.type == "Placeholder"
+                || outputs[0].op.type == "StridedSlice")
+                return exec_graph.external_captures.Last().numpy();
+
+            // Consolidate updates
+            exec_graph.as_default();
+            exec_graph.Inputs = exec_graph.internal_captures;
+            exec_graph.Outputs = outputs;
+            
+            var graph_fn = new ConcreteFunction(exec_graph);
+
+            _CURRENT_SCRATCH_GRAPH = null;
+            tf.Context.restore_mode();
+            // return outputs.eval();
+            throw new NotImplementedException("");
         }
 
         public class _DummyEagerGraph

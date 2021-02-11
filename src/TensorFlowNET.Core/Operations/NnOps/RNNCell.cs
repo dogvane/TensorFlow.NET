@@ -67,8 +67,14 @@ namespace Tensorflow
         public bool Trainable => throw new NotImplementedException();
 
         public List<IVariableV1> trainable_variables => throw new NotImplementedException();
+        public List<IVariableV1> trainable_weights => throw new NotImplementedException();
+        public List<IVariableV1> non_trainable_weights => throw new NotImplementedException();
 
         public TensorShape output_shape => throw new NotImplementedException();
+
+        public TensorShape BatchInputShape => throw new NotImplementedException();
+
+        public TF_DataType DType => throw new NotImplementedException();
 
         public RnnCell(bool trainable = true,
             string name = null,

@@ -48,6 +48,16 @@ namespace TensorFlowNET.UnitTest.Basics
             Assert.AreEqual(11f, (float)v1.numpy());
         }
 
+        [TestMethod]
+        public void Assign3()
+        {
+            var v1 = tf.Variable(10.0f, name: "v1");
+            var v2 = tf.Variable(v1, name: "v2");
+            Assert.AreEqual(v1.numpy(), v2.numpy());
+            v1.assign(30.0f);
+            Assert.AreNotEqual(v1.numpy(), v2.numpy());
+        }
+
         /// <summary>
         /// Assign tensor to slice of other tensor.
         /// https://www.tensorflow.org/api_docs/python/tf/Variable#__getitem__
@@ -120,6 +130,16 @@ namespace TensorFlowNET.UnitTest.Basics
             var neg_x = tf.negative(x);
             Assert.IsTrue(Enumerable.SequenceEqual(new[] { 1, 2 }, neg_x.shape));
             Assert.IsTrue(Enumerable.SequenceEqual(new[] { -1, -2 }, neg_x.numpy().ToArray<int>()));
+        }
+
+        [TestMethod]
+        public void IdentityOriginalTensor()
+        {
+            var a = tf.Variable(5);
+            var a_identity = tf.identity(a);
+            a.assign_add(1);
+            Assert.AreEqual(5, (int)a_identity.numpy());
+            Assert.AreEqual(6, (int)a.numpy());
         }
     }
 }

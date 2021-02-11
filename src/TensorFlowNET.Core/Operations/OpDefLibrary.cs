@@ -30,7 +30,7 @@ namespace Tensorflow
 
         public Operation _apply_op_helper(string op_type_name, string name = null, Dictionary<string, object> keywords = null)
         {
-            var g = ops.get_default_graph();
+            var g = ops._get_graph_from_inputs(keywords == null ? new object[0] : keywords.Values.ToArray());
             var op_def = g.GetOpDef(op_type_name);
 
             // Default name if not specified.
@@ -59,7 +59,8 @@ namespace Tensorflow
             var input_types = new List<TF_DataType>();
             object values = null;
 
-            return tf_with(ops.name_scope(name), scope =>
+            g.as_default();
+            var ret_op = tf_with(ops.name_scope(name), scope =>
             {
                 var inferred_from = new Dictionary<string, object>();
                 var base_types = new List<TF_DataType>();
@@ -131,7 +132,7 @@ namespace Tensorflow
                         if (!input_arg.IsRef && dtype != DataType.DtInvalid)
                             dtype = dtype.as_base_dtype();
 
-                        values = ops.internal_convert_n_to_tensor(values,
+                        values = ops.internal_convert_n_to_tensor(values as object[],
                             name: input_arg.Name,
                             dtype: dtype.as_tf_dtype(),
                             preferred_dtype: default_dtype.as_tf_dtype(),
@@ -148,7 +149,7 @@ namespace Tensorflow
                         else if (default_type_attr_map.ContainsKey(input_arg.TypeAttr))
                             default_dtype = (DataType)default_type_attr_map[input_arg.TypeAttr];
 
-                        var value = ops.internal_convert_to_tensor(values,
+                        var value = ops.convert_to_tensor(values,
                             name: input_name,
                             dtype: dtype.as_tf_dtype(),
                             as_ref: input_arg.IsRef,
@@ -249,6 +250,8 @@ namespace Tensorflow
 
                 return op;
             });
+            g.Exit();
+            return ret_op;
         }
 
         private void _MaybeColocateWith(ITensorOrOperation[] inputs)

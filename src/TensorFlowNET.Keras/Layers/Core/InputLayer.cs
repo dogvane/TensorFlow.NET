@@ -58,9 +58,6 @@ namespace Tensorflow.Keras.Layers
                 args.DType = args.InputTensor == null ? tf.float32 : args.InputTensor.dtype;
             }
 
-            // In graph mode, create a graph placeholder to call the layer on.
-            tf.Context.graph_mode();
-
             if (args.InputTensor == null)
             {
                 if (args.InputShape != null)
@@ -74,6 +71,9 @@ namespace Tensorflow.Keras.Layers
                     args.BatchInputShape = null;
                 }
 
+                var graph = keras.backend.get_graph();
+                graph.as_default();
+
                 args.InputTensor = keras.backend.placeholder(
                     shape: BatchInputShape,
                     dtype: DType,
@@ -81,6 +81,7 @@ namespace Tensorflow.Keras.Layers
                     sparse: args.Sparse,
                     ragged: args.Ragged);
 
+                graph.Exit();
 
                 isPlaceholder = true;
             }
@@ -89,16 +90,15 @@ namespace Tensorflow.Keras.Layers
             // and set output_tensors' _keras_history.
             // input_tensor._keras_history = base_layer.KerasHistory(self, 0, 0)
             // input_tensor._keras_mask = None
-            new Node(this, new NodeArgs
+            var node = new Node(new NodeArgs
             {
                 Outputs = args.InputTensor
             });
+            node.Connect(this);
 
             typeSpec = new TensorSpec(args.InputTensor.TensorShape,
                 dtype: args.InputTensor.dtype,
                 name: Name);
-
-            tf.Context.restore_mode();
         }
 
         public static InputLayer from_config(LayerArgs args)

@@ -25,16 +25,13 @@ namespace Tensorflow.Keras.Engine
             Tensors outputs = null;
 
             var eager = tf.executing_eagerly();
-            using var ctxManager = CallContext.enter();
+            using var ctxManager = CallContext.enter(build_graph: false);
 
             string nameScope = "";
             if (eager)
                 nameScope = Name;
             else
                 nameScope = _name_scope();
-
-            if (!inputs.IsEagerTensor)
-                tf.Context.graph_mode();
 
             tf_with(ops.name_scope(nameScope), scope =>
             {
@@ -43,13 +40,11 @@ namespace Tensorflow.Keras.Engine
 
                 outputs = Call(inputs, state: state, is_training: is_training);
 
-                outputs = _set_connectivity_metadata_(inputs, outputs);
+                // memory leak
+                // _set_connectivity_metadata_(inputs, outputs);
                 _handle_activity_regularization(inputs, outputs);
                 _set_mask_metadata(inputs, outputs, null);
             });
-
-            if (!inputs.IsEagerTensor)
-                tf.Context.restore_mode();
 
             return outputs;
         }

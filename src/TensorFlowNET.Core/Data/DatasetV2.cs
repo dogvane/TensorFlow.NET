@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Tensorflow.Data;
 using Tensorflow.Framework.Models;
 using static Tensorflow.Binding;
 
@@ -25,6 +26,9 @@ namespace Tensorflow
 
         public IDatasetV2 cache(string filename = "")
             => new CacheDataset(this, filename: filename);
+
+        public IDatasetV2 concatenate(IDatasetV2 dataset)
+            => new ConcatenateDataset(this, dataset);
 
         public IDatasetV2 take(int count = -1)
             => new TakeDataset(this, count: count);
@@ -60,7 +64,7 @@ namespace Tensorflow
                 preserve_cardinality: preserve_cardinality,
                 use_legacy_function: use_legacy_function);
 
-        public IDatasetV2 map(Func<Tensor, (Tensor, Tensor), (Tensor, Tensor)> map_func, int num_parallel_calls = -1)
+        public IDatasetV2 map(Func<Tensors, Tensors> map_func, int num_parallel_calls = -1)
             => new ParallelMapDataset(this, map_func, num_parallel_calls: num_parallel_calls);
 
         public IDatasetV2 flat_map(Func<Tensor, IDatasetV2> map_func)

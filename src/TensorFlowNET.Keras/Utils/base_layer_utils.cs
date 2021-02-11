@@ -18,6 +18,7 @@ using NumSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Tensorflow.Keras.ArgsDefinition;
 using Tensorflow.Keras.Engine;
 using static Tensorflow.Binding;
@@ -41,15 +42,13 @@ namespace Tensorflow.Keras.Utils
             Func<Tensor> init_val = () => args.Initializer.Apply(new InitializerArgs(args.Shape, dtype: args.DType));
 
             var variable_dtype = args.DType.as_base_dtype();
-            var v = tf.Variable(init_val,
+            return tf.Variable(init_val,
                 dtype: variable_dtype,
                 shape: args.Shape,
                 name: args.Name,
                 trainable: args.Trainable,
                 validate_shape: args.ValidateShape,
                 use_resource: args.UseResource);
-
-            return v;
         }
 
         /// <summary>
@@ -151,28 +150,31 @@ namespace Tensorflow.Keras.Utils
 
                     // recursively
                     CreateKerasHistoryHelper(layer_inputs, processed_ops, created_layers);
-                    Layer op_layer = null;
-                    /*var op_layer = new TensorFlowOpLayer(new TensorFlowOpLayerArgs
+                    var op_layer = GetLayer<ITensorFlowOpLayer>(new TensorFlowOpLayerArgs
                     {
                         NodeDef = op.node_def,
                         Constants = constants,
                         Name = op.name
-                    });*/
-                    op_layer = op.type switch
-                    {
-                        // "AddV2" => keras.layers.Add(),
-                        _ => new TensorFlowOpLayer(new TensorFlowOpLayerArgs
-                        {
-                            NodeDef = op.node_def,
-                            Constants = constants,
-                            Name = op.name
-                        })
-                    };
+                    });
                     created_layers.Add(op_layer);
                     op_layer.SetConnectivityMetadata(layer_inputs, op.outputs);
                     processed_ops.Add(op);
                 }
             }
+        }
+
+        static Layer GetLayer<T>(LayerArgs args)
+        {
+            Layer layer = default;
+            var assemble = Assembly.Load("TensorFlow.Keras.Layers");
+            foreach (var type in assemble.GetTypes().Where(x => x.GetInterface(typeof(T).Name) != null))
+            {
+                layer = (Layer)Activator.CreateInstance(type, new object[] { args });
+            }
+
+            if (layer == null)
+                throw new NotImplementedException($"Can't find implementation for type {args.GetType().Name}");
+            return layer;
         }
 
         // recusive

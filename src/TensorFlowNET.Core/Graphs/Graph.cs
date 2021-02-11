@@ -118,6 +118,9 @@ namespace Tensorflow
             }
         }
 
+        protected Graph outer_graph;
+        public Graph OuterGraph => outer_graph;
+
         public Graph()
         {
             _handle = c_api.TF_NewGraph();
@@ -143,10 +146,12 @@ namespace Tensorflow
 
         /// <summary>
         /// Returns a context manager that makes this `Graph` the default graph.
+        /// Must call Exit() to pop graph
         /// </summary>
         /// <returns></returns>
-        public Graph as_default()
+        public virtual Graph as_default()
         {
+            tf.Context.graph_mode(isFunc: false);
             return ops.set_default_graph(this);
         }
 
@@ -297,7 +302,7 @@ namespace Tensorflow
 
         public void device(string device_name)
         {
-            throw new NotImplementedException("");
+            
         }
 
         private void _create_op_helper(Operation op, bool compute_device = true)
@@ -484,7 +489,7 @@ namespace Tensorflow
 
         protected override void DisposeManagedResources()
         {
-            ops.default_graph_stack.remove(this);
+            
         }
 
         protected override void DisposeUnmanagedResources(IntPtr handle)
@@ -524,6 +529,12 @@ namespace Tensorflow
             status.Check();
 
             return new TensorShape(dims.Select(x => (int)x).ToArray());
+        }
+
+        public virtual void Exit()
+        {
+            tf.Context.restore_mode();
+            ops.pop_graph();
         }
 
         string debugString = string.Empty;

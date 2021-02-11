@@ -24,6 +24,13 @@ namespace Tensorflow
         IDatasetV2 cache(string filename = "");
 
         /// <summary>
+        /// Creates a `Dataset` by concatenating the given dataset with this dataset.
+        /// </summary>
+        /// <param name="dataset"></param>
+        /// <returns></returns>
+        IDatasetV2 concatenate(IDatasetV2 dataset);
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="count"></param>
@@ -60,7 +67,7 @@ namespace Tensorflow
             bool preserve_cardinality = true,
             bool use_legacy_function = false);
 
-        IDatasetV2 map(Func<Tensor, (Tensor, Tensor), (Tensor, Tensor)> map_func,
+        IDatasetV2 map(Func<Tensors, Tensors> map_func,
             int num_parallel_calls = -1);
 
         IDatasetV2 flat_map(Func<Tensor, IDatasetV2> map_func);

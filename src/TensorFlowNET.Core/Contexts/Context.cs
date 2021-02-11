@@ -19,13 +19,15 @@ using System.Diagnostics;
 using System.Linq;
 using Tensorflow.Eager;
 using static Tensorflow.Binding;
+using Google.Protobuf;
+using Tensorflow.Util;
 
 namespace Tensorflow.Contexts
 {
     /// <summary>
     /// Environment in which eager operations execute.
     /// </summary>
-    public sealed class Context : IDisposable
+    public sealed partial class Context : IDisposable
     {
         public const int GRAPH_MODE = 0;
         public const int EAGER_MODE = 1;
@@ -37,14 +39,14 @@ namespace Tensorflow.Contexts
         ContextSwitchStack context_switches;
         public FunctionCallOptions FunctionCallOptions { get; }
 
-        public SafeContextHandle Handle { get; }
+        SafeContextHandle _handle;
+        public SafeContextHandle Handle => _handle;
 
-        public Context(ContextOptions opts, Status status)
+        public Context()
         {
-            Handle = c_api.TFE_NewContext(opts.Handle, status.Handle);
-            status.Check(true);
+            _device_policy = ContextDevicePlacementPolicy.DEVICE_PLACEMENT_SILENT;
             context_switches = new ContextSwitchStack(defaultExecutionMode == EAGER_MODE, false);
-            initialized = true;
+            initialized = false;
             FunctionCallOptions = new FunctionCallOptions();
         }
 
@@ -55,14 +57,25 @@ namespace Tensorflow.Contexts
         {
             if (initialized)
                 return;
+
+            Config = MergeConfig();
+            FunctionCallOptions.Config = Config;
+            var config_str = Config.ToByteArray();
+            using var opts = new ContextOptions();
+            using var status = new Status();
+            c_api.TFE_ContextOptionsSetConfig(opts.Handle, config_str, (ulong)config_str.Length, status.Handle);
+            status.Check(true);
+            c_api.TFE_ContextOptionsSetDevicePlacementPolicy(opts.Handle, _device_policy);
+            _handle = c_api.TFE_NewContext(opts.Handle, status.Handle);
+            status.Check(true);
             initialized = true;
         }
 
         public void start_step()
-            => c_api.TFE_ContextStartStep(Handle);
+            => c_api.TFE_ContextStartStep(_handle);
 
         public void end_step()
-            => c_api.TFE_ContextEndStep(Handle);
+            => c_api.TFE_ContextEndStep(_handle);
 
         /// <summary>
         /// Checks whether the current thread has eager execution enabled.
@@ -70,7 +83,12 @@ namespace Tensorflow.Contexts
         /// <returns></returns>
         [DebuggerStepThrough]
         public bool executing_eagerly()
-            => context_switches.Current().EagerMode;
+        {
+            if(context_switches.Count() == 0)
+                tf.enable_eager_execution();
+            
+            return context_switches.Current().EagerMode;
+        }
 
         public bool is_build_function()
             => context_switches.Current().IsBuildingFunction;
@@ -86,66 +104,48 @@ namespace Tensorflow.Contexts
         public void eager_mode(bool isFunc = false)
             => context_switches.Push(true, isFunc);
 
+        public bool switched_to_graph(params object[] args)
+        {
+            var switching_to_graph = has_graph_arg(args) && tf.Context.executing_eagerly();
+            if (switching_to_graph)
+                tf.Context.graph_mode(tf.Context.is_build_function());
+            return switching_to_graph;
+        }
+
+        public bool has_graph_arg(params object[] args)
+        {
+            var flatten_args = nest.flatten<object>(args);
+            bool has_graph_arg = false;
+            foreach (var el in flatten_args)
+            {
+                if (el is Tensor tensor && !tensor.IsEagerTensor)
+                {
+                    has_graph_arg = true;
+                    break;
+                }
+            }
+            return has_graph_arg;
+        }
+
         public void restore_mode()
         {
             context_switches.Pop();
+            tf.get_default_graph();
         }
 
-        // [DebuggerStepThrough]
-        public T RunInAutoMode<T>(Func<T> graphAction, Func<T> eagerAction, params Tensor[] tensors)
+        public void reset_context()
         {
-            var shouldRunInEager = executing_eagerly()
-                && tensors.Count(x => x.IsEagerTensor) == tensors.Length;
+            ops.reset_uid();
+            // tf.defaultSession = null;
+            ops.reset_default_graph();
+            context_switches.Clear();
+            tf.Context.ensure_initialized();
 
-            if (shouldRunInEager)
-                return eagerAction();
-            else
-            {
-                if (executing_eagerly())
-                {
-                    graph_mode();
-                    var result = graphAction();
-                    restore_mode();
-                    return result;
-                }
-                else
-                {
-                    return graphAction();
-                }
-            }
-        }
-
-        // [DebuggerStepThrough]
-        public Tensors RunInAutoMode2(Func<Tensors> graphAction, 
-            Func<Tensors> eagerAction, 
-            Action<Operation> recordGradient,
-            Tensors tensors)
-        {
-            var shouldRunInEager = executing_eagerly()
-                && tensors.Count(x => x.IsEagerTensor) == tensors.Length;
-
-            if (shouldRunInEager)
-                return eagerAction();
-            else
-            {
-                if (executing_eagerly())
-                {
-                    graph_mode();
-                    var result = graphAction();
-                    restore_mode();
-                    return result;
-                }
-                else
-                {
-                    var result = graphAction();
-                    if (tf.Runner.MustRecordGradient())
-                        recordGradient(result[0].op);
-                    return result;
-                }
-            }
+            if (_handle != null)
+                c_api.TFE_ContextClearCaches(_handle);
         }
 
         public void Dispose()
-            => Handle.Dispose();
+            => _handle.Dispose();
     }
 }
